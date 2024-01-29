@@ -24,7 +24,7 @@ limitations under the License.
 
 #include <string>
 #include <vector>
-
+#include <iostream>
 #include "epoch_tracker/fd_filter.h"
 #include "epoch_tracker/lpc_analyzer.h"
 #include "epoch_tracker/fft.h"
@@ -36,6 +36,7 @@ EpochTracker::EpochTracker(void) : sample_rate_(-1.0) {
 }
 
 EpochTracker::~EpochTracker(void) {
+  window_.clear();
 }
 
 static inline int32_t RoundUp(float val) {
@@ -650,6 +651,78 @@ bool EpochTracker::GetBandpassedRmsSignal(const std::vector<float>& input,
 }
 
 
+bool EpochTracker::GetSpectralDensity(const std::vector<float>& input,
+                                      float sample_rate,
+                                      float low_limit, float high_limit,
+                                      float frame_interval,
+                                      float frame_dur,
+                                      std::vector<float>* output_rms,
+                                      std::vector<FrameFeature> &frame_features) {
+  size_t frame_step = RoundUp(sample_rate * frame_interval);
+  size_t frame_size = RoundUp(sample_rate * frame_dur);
+  size_t n_frames = 1 + ((input.size() - frame_size) / frame_step);
+  if (n_frames < 1) {
+    fprintf(stderr, "input too small (%d) in GetSpectralDensity\n",
+            static_cast<int>(input.size()));
+    output_rms->resize(0);
+    return false;
+  }
+  output_rms->resize(n_frames);
+  std::cout << "spectral density n_frames:" << n_frames << std::endl;
+  static int total_frames = 0;
+  total_frames += n_frames;
+  std::cout << "spectral density total_frames:" << total_frames << std::endl;
+  FFT ft(FFT::fft_pow2_from_window_size(frame_size));
+  int32_t fft_size = ft.get_fftSize();
+  int32_t first_bin = RoundUp(fft_size * low_limit / sample_rate);
+  int32_t last_bin = RoundUp(fft_size * high_limit / sample_rate);
+  float* re = new float[fft_size];
+  float* im = new float[fft_size];
+  size_t first_frame = frame_size / (2 * frame_step);
+  if ((first_frame * 2 * frame_step) < frame_size) {
+    first_frame++;
+  }
+  int total_count = n_frames - first_frame;
+  int index = 0;
+  int source_frame_index = 0;
+  int source_frame_step = total_count * 1.0 / frame_features.size();
+  for (size_t frame = first_frame; frame < n_frames; ++frame) {
+    Window(input, (frame - first_frame) * frame_step, frame_size, re);
+    for (size_t i = 0; i < frame_size; ++i) {
+      im[i] = 0.0;
+    }
+    for (int32_t i = frame_size; i < fft_size; ++i) {
+      re[i] = im[i] = 0.0;
+    }
+    ft.fft(re, im);
+    float rms = 20.0 *
+        log10(1.0 + ft.get_band_rms(re, im, first_bin, last_bin));
+    (*output_rms)[frame] = rms;
+    if (frame == first_frame) {
+      for (size_t bframe = 0; bframe < first_frame; ++bframe) {
+        (*output_rms)[bframe] = rms;
+      }
+    }
+    if (frame == source_frame_index && index < frame_features.size()) {
+      // save the spectral density of the last frame to spectral_density
+      frame_features[index].spectral_density.clear();
+      for (int i = 0; i < fft_size; i ++) {
+        if (i < first_bin || i > last_bin) {
+          frame_features[index].spectral_density.push_back(0);
+        } else {
+          frame_features[index].spectral_density.push_back(sqrt(re[i] * re[i]) + (im[i] * im[i]));
+        }
+      }
+      index ++;
+      source_frame_index = source_frame_index + source_frame_step;
+    }
+  }
+  delete [] re;
+  delete [] im;
+  return true;
+}
+
+
 void EpochTracker::GetSymmetryStats(const std::vector<float>& data, float* pos_rms,
                                     float* neg_rms, float* mean) {
   int32_t n_input = data.size();
@@ -744,6 +817,44 @@ bool EpochTracker::ComputePolarity(int *polarity) {
   }
   return true;
 }
+
+bool EpochTracker::ComputeFrameFeatures(std::vector<FrameFeature> &frame_features) {
+  if (sample_rate_ <= 0.0) {
+    fprintf(stderr, "EpochTracker not initialized in ComputeFeatures\n");
+    return false;
+  }
+  if (!GetSpectralDensity(signal_, sample_rate_, min_freq_for_rms_,
+                          max_freq_for_rms_, internal_frame_interval_,
+                          rms_window_dur_, &bandpassed_rms_,
+                          frame_features)) {
+    fprintf(stderr, "Failure in GetSpectralDensity\n");
+    return false;
+  }
+  if (!GetLpcResidual(signal_, sample_rate_, &residual_)) {
+    fprintf(stderr, "Failure in GetLpcResidual\n");
+    return false;
+  }
+  n_feature_frames_ = bandpassed_rms_.size();
+  float mean = 0.0;
+  GetSymmetryStats(residual_, &positive_rms_, &negative_rms_, &mean);
+  fprintf(stdout, "Residual symmetry: P:%f  N:%f  MEAN:%f\n",
+	  positive_rms_, negative_rms_, mean);
+
+  if (positive_rms_ > negative_rms_) {
+    fprintf(stdout, "Inverting signal\n");
+    for (size_t i = 0; i < residual_.size(); ++i) {
+      residual_[i] = -residual_[i];
+      signal_[i] = -signal_[i];
+    }
+  }
+  NormalizeAmplitude(residual_, sample_rate_, &norm_residual_);
+  GetResidualPulses();
+  GetPulseCorrelations(correlation_dur_, correlation_thresh_);
+  GetVoiceTransitionFeatures();
+  GetRmsVoicingModulator();
+  return true;
+}
+
 
 bool EpochTracker::ComputeFeatures(void) {
   if (sample_rate_ <= 0.0) {

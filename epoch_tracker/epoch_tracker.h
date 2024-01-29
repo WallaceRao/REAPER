@@ -90,7 +90,9 @@ limitations under the License.
 #include <vector>
 #include <string>
 
-static const float kExternalFrameInterval = 0.005;
+// 0.005 to 0.02, make it larger to speedup but decrease f0 resolution
+static const float kExternalFrameInterval = 0.005; 
+// 0.002 to 0.01,  make it larger to speedup but decrease spectral density resolution
 static const float kInternalFrameInterval = 0.002;
 static const float kMinF0Search = 40.0;
 static const float kMaxF0Search = 500.0;
@@ -100,6 +102,14 @@ static const bool kDoHighpass = true;
 static const bool kDoHilbertTransform = false;
 static const char kDebugName[] = "";
 
+struct FrameFeature {
+  float f0 = 0;
+  std::vector<float> spectral_density {};
+  float energy = 0; // RMS of spectral_density
+  float db = 0;
+  float f1 = 0; // not used
+  float f2 = 0; // not used
+};
 
 class EpochTracker {
  public:
@@ -184,6 +194,12 @@ class EpochTracker {
   bool GetBandpassedRmsSignal(const std::vector<float>& input, float sample_rate,
                               float low_limit, float high_limit, float frame_interval,
                               float frame_dur,  std::vector<float>* output_rms);
+  // same with GetBandpassedRmsSignal. but save spectral_density
+  // if the last frame, used for real-time computing
+  bool GetSpectralDensity(const std::vector<float>& input, float sample_rate,
+                          float low_limit, float high_limit, float frame_interval,
+                          float frame_dur,  std::vector<float>* output_rms,
+                          std::vector<FrameFeature> &frame_features);
 
   // Compute the RMS of positive and negative signal values separately.
   // The signal is made to be zero mean before this computation.  Any
@@ -213,6 +229,7 @@ class EpochTracker {
   // the pulse working array in preparation for dynamic programming.
   bool ComputeFeatures(void);
 
+  bool ComputeFrameFeatures(std::vector<FrameFeature> &frame_features);
   // Write all of data to a file, wht name of which is
   // debug_name_ _ "." + extension.  If debug_name_ is empty, do nothing.
   bool WriteDebugData(const std::vector<float>& data,
@@ -283,6 +300,7 @@ class EpochTracker {
   void set_min_f0_search(float v) { min_f0_search_ = v; }
   void set_max_f0_search(float v) { max_f0_search_ = v; }
   void set_unvoiced_cost(float v) { unvoiced_cost_ = v; }
+  std::vector<float> get_energys() {return bandpassed_rms_;}
 
  private:
   // Search the signal in norm_residual_ for prominent negative peaks.

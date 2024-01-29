@@ -19,12 +19,15 @@ limitations under the License.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
+#include <vector>
+#include <iostream>
+#include <cstring>
 
 #include "core/file_resource.h"
 #include "core/track.h"
 #include "epoch_tracker/epoch_tracker.h"
 #include "wave/wave.h"
-
+#include "epoch_tracker/feature_extractor.h"
 
 const char* kHelp = "Usage: <bin> -i <input_file> "
     "[-f <f0_output> -p <pitchmarks_output> \\\n"
@@ -221,6 +224,27 @@ int main(int argc, char* argv[]) {
   int16_t* wave_datap = const_cast<int16_t *>(wav.data()->data());
   int32_t n_samples = wav.num_samples();
   float sample_rate = wav.sample_rate();
+  FeatureExtractor extractor;
+  int i = 0;
+  
+  while (i <= n_samples - 100) {
+    std::vector<uint16_t> samples;
+    samples.resize(100);
+    memcpy(&samples[0], const_cast<int16_t *>(wav.data()->data()) + i, 100 * 2);
+    extractor.feedSamples(samples);
+    i += 100;
+    //std::cout << "now i:" << i << ", total samples:" << n_samples << std::endl;
+  }
+  auto all_features = extractor.getAllFeature();
+  std::cout << "all features:" << all_features.size() << std::endl;
+  for (const auto f: all_features) {
+    std::cout << f.f0 << " ";
+  }
+  std::cout << std::endl;
+  return 0;
+
+
+
   if (!et.Init(wave_datap, n_samples, sample_rate,
 	       min_f0, max_f0, do_high_pass, do_hilbert_transform)) {
     return 1;

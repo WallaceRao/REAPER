@@ -3,12 +3,12 @@ project(Reaper)
 
 # Use C11 for unique_ptr
 include(CheckCXXCompilerFlag)
-CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
-CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
+CHECK_CXX_COMPILER_FLAG("-std=c++11 -g -O0" COMPILER_SUPPORTS_CXX11)
+CHECK_CXX_COMPILER_FLAG("-std=c++0x -g -O0" COMPILER_SUPPORTS_CXX0X)
 if(COMPILER_SUPPORTS_CXX11)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -g -O0")
 elseif(COMPILER_SUPPORTS_CXX0X)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -g -O0")
 else()
   message(STATUS "The compiler ${CMAKE_CXX_COMPILER} has no C++11 support. Please use a different C++ compiler.")
 endif()
@@ -30,7 +30,8 @@ add_library(wave STATIC wave/codec_riff.h wave/codec_riff.cc
 add_library(epoch_tracker STATIC epoch_tracker/fft.h epoch_tracker/fft.cc
   epoch_tracker/fd_filter.h epoch_tracker/fd_filter.cc
   epoch_tracker/lpc_analyzer.cc epoch_tracker/lpc_analyzer.h
-  epoch_tracker/epoch_tracker.cc epoch_tracker/epoch_tracker.h)
+  epoch_tracker/epoch_tracker.cc epoch_tracker/epoch_tracker.h
+  epoch_tracker/feature_extractor.cc epoch_tracker/feature_extractor.h)
 
 # Binary to extract F0.
 add_executable(reaper epoch_tracker_main.cc)
