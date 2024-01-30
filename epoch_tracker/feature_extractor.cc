@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <cstring>
+#include <algorithm>
 
 #include "epoch_tracker/fd_filter.h"
 #include "epoch_tracker/lpc_analyzer.h"
@@ -71,13 +72,25 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples, bool is_last) {
       std::cout << "compute feature failed" << std::endl;
       return false;
     }
+    // compute dBs
+    int samples_step = samples_with_pad.size() * 1.0 / step_frames_features.size();
+    for (int i = 0; i < step_frames_features.size(); i ++) {
+      int start_idx = i * samples_step;
+      int end_idx = std::min(start_idx + samples_step, (int)samples_with_pad.size());
+      int sum_val = 0;
+      for (int j = start_idx; j < end_idx; j ++) {
+          sum_val += abs(samples_with_pad[j]);
+      }
+      if (sum_val > 0) {
+        step_frames_features[i].db = std::max(0.0, 20.0 * log10(1.0 * sum_val / (end_idx - start_idx)));
+      } else {
+        step_frames_features[i].db = 0;
+      }
+    }
     _latest_frame_feature = step_frames_features.back();
     // update _pad_samples
     memcpy(&_pad_samples[0], &_samples[_samples.size() - pad_samples_size], pad_samples_size * sizeof(uint16_t));
     _samples.clear(); 
-    // exclude the features corresponds to the prev paddings.
-    std::cout << "step_frames_features size:" << step_frames_features.size() << std::endl;
-    std::cout << "_all_frame_features size:" << _all_frame_features.size() << std::endl;
     _all_frame_features.insert(_all_frame_features.end(), step_frames_features.begin() + _pre_pad_frames, step_frames_features.end());
     delete f0;
     delete pm;
@@ -112,13 +125,26 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples, bool is_last) {
         return false;
       }
       _latest_frame_feature = step_frames_features.back();
-      //std::cout << "1 samples size now:" << _samples.size() << " min_samples:" << min_samples << std::endl;
+      // compute dBs
+      int samples_step = samples_with_pad.size() * 1.0 / step_frames_features.size();
+      for (int i = 0; i < step_frames_features.size(); i ++) {
+        int start_idx = i * samples_step;
+        int end_idx = std::min(start_idx + samples_step, (int)samples_with_pad.size());
+        int sum_val = 0;
+        for (int j = start_idx; j < end_idx; j ++) {
+            sum_val += abs(samples_with_pad[j]);
+        }
+        if (sum_val > 0) {
+          step_frames_features[i].db = std::max(0.0, 20.0 * log10(1.0 * sum_val / (end_idx - start_idx)));
+        } else {
+          step_frames_features[i].db = 0;
+        }
+      }
       // update _pad_samples
       memcpy(&_pad_samples[0], &_samples[step_samples - pad_samples_size], pad_samples_size * sizeof(uint16_t));
       _samples.erase(_samples.begin(), _samples.begin() + step_samples);
-      //std::cout << "2 samples size now:" << _samples.size() << " min_samples:" << min_samples << std::endl;
-      std::cout << "step_frames_features size:" << step_frames_features.size() << std::endl;
-      std::cout << "_all_frame_features size:" << _all_frame_features.size() << std::endl;
+      // std::cout << "step_frames_features size:" << step_frames_features.size() << std::endl;
+      // std::cout << "_all_frame_features size:" << _all_frame_features.size() << std::endl;
       _all_frame_features.insert(_all_frame_features.end(), step_frames_features.begin() + _pre_pad_frames, step_frames_features.end());
       delete f0;
       delete pm;
@@ -193,8 +219,15 @@ bool FeatureExtractor::compute(EpochTracker &et,
   for (int i = 0; i < features.size(); i ++) {
     int energy_index = i * energy_step;
     features[i].energy = energys[energy_index];
+    /*
+    // mute energy whose f0 is 0
+    if (features[i].f0 <= 0) {
+      features[i].energy = 0;
+    }
+    */
   }
-  // calculate db from the max value of spectral_density
+  /*
+  // calculate db from the max value of spectral_density, not
   for (auto &feature: features) {
     float max_density = 0;
     for (int i = 0; i < feature.spectral_density.size(); i ++) {
@@ -202,7 +235,12 @@ bool FeatureExtractor::compute(EpochTracker &et,
         max_density = feature.spectral_density[i];
       }
     }
-    feature.db = 20.0 * log10(max_density);
+    if (max_density > 0) {
+      feature.db = 20.0 * log10(max_density);
+    } else {
+      feature.db = 0;
+    }
   }
+  */
   return true;
 }

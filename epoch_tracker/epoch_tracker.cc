@@ -684,8 +684,8 @@ bool EpochTracker::GetSpectralDensity(const std::vector<float>& input,
   }
   int total_count = n_frames - first_frame;
   int index = 0;
-  int source_frame_index = 0;
-  int source_frame_step = total_count * 1.0 / frame_features.size();
+  int source_frame_index = first_frame;
+  float source_frame_step = total_count * 1.0 / frame_features.size();
   for (size_t frame = first_frame; frame < n_frames; ++frame) {
     Window(input, (frame - first_frame) * frame_step, frame_size, re);
     for (size_t i = 0; i < frame_size; ++i) {
@@ -703,8 +703,9 @@ bool EpochTracker::GetSpectralDensity(const std::vector<float>& input,
         (*output_rms)[bframe] = rms;
       }
     }
+    //std::cout << "frame:" << frame << ", source_frame_index:" << source_frame_index << std::endl;
     if (frame == source_frame_index && index < frame_features.size()) {
-      // save the spectral density of the last frame to spectral_density
+      // save the spectral density
       frame_features[index].spectral_density.clear();
       for (int i = 0; i < fft_size; i ++) {
         if (i < first_bin || i > last_bin) {
@@ -713,6 +714,7 @@ bool EpochTracker::GetSpectralDensity(const std::vector<float>& input,
           frame_features[index].spectral_density.push_back(sqrt(re[i] * re[i]) + (im[i] * im[i]));
         }
       }
+      // std::cout << "frame feature index" << index << ", density size:" <<  frame_features[index].spectral_density.size() << std::endl;
       index ++;
       source_frame_index = source_frame_index + source_frame_step;
     }

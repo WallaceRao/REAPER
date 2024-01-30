@@ -243,6 +243,7 @@ int main(int argc, char* argv[]) {
   }
   auto all_features = extractor.getAllFeature();
   std::cout << "all features:" << all_features.size() << std::endl;
+  std::cout << "f0 begin" << std::endl;
   int index = 0;
   for (const auto f: all_features) {
     std::cout << f.f0 << " ";
@@ -252,6 +253,31 @@ int main(int argc, char* argv[]) {
     }
   }
   std::cout << std::endl;
+  std::cout << "f0 end" << std::endl;
+  std::cout << "energy begin" << std::endl;
+  index = 0;
+  for (const auto f: all_features) {
+    std::cout << f.energy << " ";
+    index ++;
+    if (index %5 ==0) {
+      std::cout << std::endl;
+    }
+  }
+  std::cout << std::endl;
+  std::cout << "energy end" << std::endl;
+  
+  std::cout << "dB begin" << std::endl;
+  index = 0;
+  for (const auto f: all_features) {
+    std::cout << f.db << " ";
+    index ++;
+    if (index %5 ==0) {
+      std::cout << std::endl;
+    }
+  }
+  std::cout << std::endl;
+  std::cout << "dB end" << std::endl;
+
   return 0;
 
 
