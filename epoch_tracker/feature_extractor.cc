@@ -12,11 +12,13 @@
 #include "epoch_tracker/fft.h"
 
 FeatureExtractor::FeatureExtractor(int sample_rate, float step_dur,
-                                   float frame_dur, int pre_pad_frames) {
+                                   float frame_dur, int pre_pad_frames,
+                                   float min_db) {
   _sample_rate = sample_rate;
   _step_dur = step_dur;
   _frame_dur = frame_dur;
   _pre_pad_frames = pre_pad_frames;
+  _min_db = min_db;
   if (pre_pad_frames * frame_dur > step_dur) {
     std::cerr << "invalid pre_pad_frames:" << pre_pad_frames << std::endl;
   }
@@ -28,12 +30,12 @@ FeatureExtractor::FeatureExtractor(int sample_rate, float step_dur,
 }
 
 
-int FeatureExtractor::feedSamples(std::vector<uint16_t> samples, bool is_last) {
+int FeatureExtractor::feedSamples(std::vector<int16_t> samples, bool is_last) {
   _samples.insert(_samples.end(), samples.begin(), samples.end());
   if (_samples.empty()) {
     return 0;
   }
-  int pad_samples_size = _pre_pad_frames * _frame_dur * _sample_rate;
+  int pad_samples_size = _pad_samples.size();
   int step_samples = _step_dur * _sample_rate;
   int min_samples =  _step_dur * _sample_rate;
   float max_f0 = kMaxF0Search;
@@ -48,6 +50,7 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples, bool is_last) {
     frame_et.set_unvoiced_cost(kUnvoicedCost);
     auto samples_with_pad = _pad_samples;
     samples_with_pad.insert(samples_with_pad.end(), _samples.begin(), _samples.end());
+    std::cout << "samples_with_pad size:" << samples_with_pad.size() << std::endl;
     if (!frame_et.Init((int16_t *)&samples_with_pad[0], samples_with_pad.size(), _sample_rate,
         min_f0, max_f0, do_high_pass, do_hilbert_transform)) {
         std::cout << "init wav epoch track failed" << std::endl;
@@ -86,10 +89,13 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples, bool is_last) {
       } else {
         step_frames_features[i].db = 0;
       }
+      if (step_frames_features[i].db < _min_db) {
+        step_frames_features[i].f0 = 0.0;
+      }
     }
     _latest_frame_feature = step_frames_features.back();
     // update _pad_samples
-    memcpy(&_pad_samples[0], &_samples[_samples.size() - pad_samples_size], pad_samples_size * sizeof(uint16_t));
+    memcpy(&_pad_samples[0], &_samples[_samples.size() - pad_samples_size], pad_samples_size * sizeof(int16_t));
     _samples.clear(); 
     _all_frame_features.insert(_all_frame_features.end(), step_frames_features.begin() + _pre_pad_frames, step_frames_features.end());
     delete f0;
@@ -102,6 +108,7 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples, bool is_last) {
       frame_et.set_unvoiced_cost(kUnvoicedCost);
       auto samples_with_pad = _pad_samples;
       samples_with_pad.insert(samples_with_pad.end(), _samples.begin(), _samples.begin() + min_samples);
+      //std::cout << "samples_with_pad size:" << samples_with_pad.size() << std::endl;
       if (!frame_et.Init((int16_t *)&samples_with_pad[0], samples_with_pad.size(), _sample_rate,
           min_f0, max_f0, do_high_pass, do_hilbert_transform)) {
           std::cout << "init wav epoch track failed" << std::endl;
@@ -139,10 +146,14 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples, bool is_last) {
         } else {
           step_frames_features[i].db = 0;
         }
+        if (step_frames_features[i].db < _min_db) {
+          step_frames_features[i].f0 = 0.0;
+        }
       }
       // update _pad_samples
-      memcpy(&_pad_samples[0], &_samples[step_samples - pad_samples_size], pad_samples_size * sizeof(uint16_t));
+      memcpy(&_pad_samples[0], &_samples[step_samples - pad_samples_size], pad_samples_size * sizeof(int16_t));
       _samples.erase(_samples.begin(), _samples.begin() + step_samples);
+      // std::cout << "step_samples:" << step_samples << ", pad_samples_size:" << pad_samples_size << std::endl;
       // std::cout << "step_frames_features size:" << step_frames_features.size() << std::endl;
       // std::cout << "_all_frame_features size:" << _all_frame_features.size() << std::endl;
       _all_frame_features.insert(_all_frame_features.end(), step_frames_features.begin() + _pre_pad_frames, step_frames_features.end());

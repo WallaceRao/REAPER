@@ -228,7 +228,7 @@ int main(int argc, char* argv[]) {
   int i = 0;
   
   while (i < n_samples) {
-    std::vector<uint16_t> samples;
+    std::vector<int16_t> samples;
     int feed_size = 100;
     bool is_last = false;
     if (i + 100 >= n_samples) {
