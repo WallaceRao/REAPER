@@ -15,9 +15,10 @@
 
 class FeatureExtractor {
  public:
-  // step_dur must be integral multiple of frame_dur
+  // step_dur must be integral multiple of frame_dur, and it should be no less that 0.5 second
+  // to get accurate result.
   FeatureExtractor(int sample_rate = 24000, float step_dur = 0.5,
-                  float frame_dur = 0.025, int pre_pad_frames = 0);
+                  float frame_dur = 0.01, int pre_pad_frames = 0);
   ~FeatureExtractor() {};
   void reset() {
     _samples.clear();
@@ -25,7 +26,7 @@ class FeatureExtractor {
     _latest_frame_feature = FrameFeature();
   }
 
-  int feedSamples(std::vector<uint16_t> samples);
+  int feedSamples(std::vector<uint16_t> samples, bool is_last = false);
   bool compute(EpochTracker &et,
                float unvoiced_pulse_interval,
                float external_frame_interval,

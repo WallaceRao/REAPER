@@ -21,8 +21,11 @@ FeatureExtractor::FeatureExtractor(int sample_rate, float step_dur,
 }
 
 
-int FeatureExtractor::feedSamples(std::vector<uint16_t> samples) {
+int FeatureExtractor::feedSamples(std::vector<uint16_t> samples, bool is_last) {
   _samples.insert(_samples.end(), samples.begin(), samples.end());
+  if (_samples.empty()) {
+    return 0;
+  }
   int step_samples = _step_dur * _sample_rate;
   int min_samples = (_pre_pad_frames + 1) * _step_dur * _sample_rate;
   float max_f0 = kMaxF0Search;
@@ -31,10 +34,10 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples) {
   bool do_high_pass = kDoHighpass;
   int ret = 0;
   int frames_in_step = _step_dur / _frame_dur + 1e-5;
-  while(_samples.size() >= min_samples) {
+  if (is_last) {
     EpochTracker frame_et;
     frame_et.set_unvoiced_cost(kUnvoicedCost);
-    if (!frame_et.Init((int16_t *)&_samples[0], min_samples, _sample_rate,
+    if (!frame_et.Init((int16_t *)&_samples[0], _samples.size(), _sample_rate,
         min_f0, max_f0, do_high_pass, do_hilbert_transform)) {
         std::cout << "init wav epoch track failed" << std::endl;
         return false;
@@ -45,7 +48,9 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples) {
     float external_frame_interval = kExternalFrameInterval;
     float inter_pulse = kUnvoicedPulseInterval;
     std::vector<FrameFeature> step_frames_features;
-    for (int i = 0; i< frames_in_step; i ++){
+    int frames_count = 1.0 * _samples.size() / _sample_rate  / _frame_dur + 1e-5;
+    std::cout << "last frame count:" << frames_count << ", sample count:" << _samples.size() << std::endl;
+    for (int i = 0; i< frames_count; i ++){
       step_frames_features.push_back(FrameFeature());
     }
     if (!compute(frame_et,
@@ -57,14 +62,48 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples) {
       return false;
     }
     _latest_frame_feature = step_frames_features.back();
-    //std::cout << "1 samples size now:" << _samples.size() << " min_samples:" << min_samples << std::endl;
-    _samples.erase(_samples.begin(), _samples.begin() + step_samples);
-    //std::cout << "2 samples size now:" << _samples.size() << " min_samples:" << min_samples << std::endl;
+    _samples.clear();
     _all_frame_features.insert(_all_frame_features.end(), step_frames_features.begin(), step_frames_features.end());
     delete f0;
     delete pm;
     delete corr;
-    ret ++;
+    ret += step_frames_features.size();
+  } else {
+    while(_samples.size() >= min_samples) {
+      EpochTracker frame_et;
+      frame_et.set_unvoiced_cost(kUnvoicedCost);
+      if (!frame_et.Init((int16_t *)&_samples[0], min_samples, _sample_rate,
+          min_f0, max_f0, do_high_pass, do_hilbert_transform)) {
+          std::cout << "init wav epoch track failed" << std::endl;
+          return false;
+      }
+      Track *f0 = NULL;
+      Track *pm = NULL;
+      Track *corr = NULL;
+      float external_frame_interval = kExternalFrameInterval;
+      float inter_pulse = kUnvoicedPulseInterval;
+      std::vector<FrameFeature> step_frames_features;
+      for (int i = 0; i< frames_in_step; i ++){
+        step_frames_features.push_back(FrameFeature());
+      }
+      if (!compute(frame_et,
+                  inter_pulse,
+                  external_frame_interval,
+                  step_frames_features,
+                  &pm, &f0, &corr)) {
+        std::cout << "compute feature failed" << std::endl;
+        return false;
+      }
+      _latest_frame_feature = step_frames_features.back();
+      //std::cout << "1 samples size now:" << _samples.size() << " min_samples:" << min_samples << std::endl;
+      _samples.erase(_samples.begin(), _samples.begin() + step_samples);
+      //std::cout << "2 samples size now:" << _samples.size() << " min_samples:" << min_samples << std::endl;
+      _all_frame_features.insert(_all_frame_features.end(), step_frames_features.begin(), step_frames_features.end());
+      delete f0;
+      delete pm;
+      delete corr;
+      ret += step_frames_features.size();
+    }
   }
   return ret;
 }
@@ -119,7 +158,6 @@ bool FeatureExtractor::compute(EpochTracker &et,
   if (!et.ComputeFrameFeatures(features)) {
     return false;
   }
-  std::cout << "ComputeFrameFeatures finished" << std::endl;
   bool tr_result = et.TrackEpochs();
   et.WriteDiagnostics("");  // Try to save them here, even after tracking failure.
   if (!tr_result) {

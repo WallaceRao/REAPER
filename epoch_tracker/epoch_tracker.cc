@@ -668,10 +668,10 @@ bool EpochTracker::GetSpectralDensity(const std::vector<float>& input,
     return false;
   }
   output_rms->resize(n_frames);
-  std::cout << "spectral density n_frames:" << n_frames << std::endl;
+  // std::cout << "spectral density n_frames:" << n_frames << std::endl;
   static int total_frames = 0;
   total_frames += n_frames;
-  std::cout << "spectral density total_frames:" << total_frames << std::endl;
+  // std::cout << "spectral density total_frames:" << total_frames << std::endl;
   FFT ft(FFT::fft_pow2_from_window_size(frame_size));
   int32_t fft_size = ft.get_fftSize();
   int32_t first_bin = RoundUp(fft_size * low_limit / sample_rate);
@@ -837,11 +837,11 @@ bool EpochTracker::ComputeFrameFeatures(std::vector<FrameFeature> &frame_feature
   n_feature_frames_ = bandpassed_rms_.size();
   float mean = 0.0;
   GetSymmetryStats(residual_, &positive_rms_, &negative_rms_, &mean);
-  fprintf(stdout, "Residual symmetry: P:%f  N:%f  MEAN:%f\n",
-	  positive_rms_, negative_rms_, mean);
+  // fprintf(stdout, "Residual symmetry: P:%f  N:%f  MEAN:%f\n",
+	//  positive_rms_, negative_rms_, mean);
 
   if (positive_rms_ > negative_rms_) {
-    fprintf(stdout, "Inverting signal\n");
+    // fprintf(stdout, "Inverting signal\n");
     for (size_t i = 0; i < residual_.size(); ++i) {
       residual_[i] = -residual_[i];
       signal_[i] = -signal_[i];
@@ -1271,6 +1271,13 @@ bool EpochTracker::ResampleAndReturnResults(float resample_interval,
   for (int32_t i = limit; i >= 0; --i) {
     int32_t frame = RoundUp(output_[i].resid_index /
                             (sample_rate_ * resample_interval));
+    //std::cout << "frame:" << frame << ", i:" << i << ", f0 size:" << f0->size()
+    //          << ", output size:" << output_.size() << ",resample_interval:" << resample_interval
+    //          << ", n_frames:" << n_frames << ", last time"<< last_time
+    //          << ", resample_interval" << resample_interval <<  std::endl;
+    if (frame >= n_frames) {
+      continue;
+    }
     (*f0)[frame] = output_[i].f0;
     (*correlations)[frame] = output_[i].nccf_value;
     if ((frame - prev_frame) > 1) {
