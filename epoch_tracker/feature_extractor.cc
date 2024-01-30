@@ -4,6 +4,7 @@
 
 #include <string>
 #include <vector>
+#include <cstring>
 
 #include "epoch_tracker/fd_filter.h"
 #include "epoch_tracker/lpc_analyzer.h"
@@ -15,9 +16,14 @@ FeatureExtractor::FeatureExtractor(int sample_rate, float step_dur,
   _step_dur = step_dur;
   _frame_dur = frame_dur;
   _pre_pad_frames = pre_pad_frames;
-  for (int i = 0; i < pre_pad_frames; i ++) {
-    _all_frame_features.push_back(FrameFeature());
-  } 
+  if (pre_pad_frames * frame_dur > step_dur) {
+    std::cerr << "invalid pre_pad_frames:" << pre_pad_frames << std::endl;
+  }
+  int pad_samples_size = 1.0 * _pre_pad_frames * frame_dur * sample_rate + 1e-1;
+  _pad_samples.clear();
+  for (int i = 0; i < pad_samples_size; i ++) {
+    _pad_samples.push_back(0);
+  }
 }
 
 
@@ -26,18 +32,22 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples, bool is_last) {
   if (_samples.empty()) {
     return 0;
   }
+  int pad_samples_size = _pre_pad_frames * _frame_dur * _sample_rate;
   int step_samples = _step_dur * _sample_rate;
-  int min_samples = (_pre_pad_frames + 1) * _step_dur * _sample_rate;
+  int min_samples =  _step_dur * _sample_rate;
   float max_f0 = kMaxF0Search;
   float min_f0 = kMinF0Search;
   bool do_hilbert_transform = kDoHilbertTransform;
   bool do_high_pass = kDoHighpass;
   int ret = 0;
   int frames_in_step = _step_dur / _frame_dur + 1e-5;
+  //std::cout << "is last:" << is_last << std::endl;
   if (is_last) {
     EpochTracker frame_et;
     frame_et.set_unvoiced_cost(kUnvoicedCost);
-    if (!frame_et.Init((int16_t *)&_samples[0], _samples.size(), _sample_rate,
+    auto samples_with_pad = _pad_samples;
+    samples_with_pad.insert(samples_with_pad.end(), _samples.begin(), _samples.end());
+    if (!frame_et.Init((int16_t *)&samples_with_pad[0], samples_with_pad.size(), _sample_rate,
         min_f0, max_f0, do_high_pass, do_hilbert_transform)) {
         std::cout << "init wav epoch track failed" << std::endl;
         return false;
@@ -48,8 +58,8 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples, bool is_last) {
     float external_frame_interval = kExternalFrameInterval;
     float inter_pulse = kUnvoicedPulseInterval;
     std::vector<FrameFeature> step_frames_features;
-    int frames_count = 1.0 * _samples.size() / _sample_rate  / _frame_dur + 1e-5;
-    std::cout << "last frame count:" << frames_count << ", sample count:" << _samples.size() << std::endl;
+    int frames_count = 1.0 * samples_with_pad.size() / _sample_rate  / _frame_dur + 1e-5;
+    std::cout << "last frame count:" << frames_count << ", sample count:" << samples_with_pad.size() << ", _pad_samples size:" << _pad_samples.size() << std::endl;
     for (int i = 0; i< frames_count; i ++){
       step_frames_features.push_back(FrameFeature());
     }
@@ -62,17 +72,24 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples, bool is_last) {
       return false;
     }
     _latest_frame_feature = step_frames_features.back();
-    _samples.clear();
-    _all_frame_features.insert(_all_frame_features.end(), step_frames_features.begin(), step_frames_features.end());
+    // update _pad_samples
+    memcpy(&_pad_samples[0], &_samples[_samples.size() - pad_samples_size], pad_samples_size * sizeof(uint16_t));
+    _samples.clear(); 
+    // exclude the features corresponds to the prev paddings.
+    std::cout << "step_frames_features size:" << step_frames_features.size() << std::endl;
+    std::cout << "_all_frame_features size:" << _all_frame_features.size() << std::endl;
+    _all_frame_features.insert(_all_frame_features.end(), step_frames_features.begin() + _pre_pad_frames, step_frames_features.end());
     delete f0;
     delete pm;
     delete corr;
-    ret += step_frames_features.size();
+    ret += step_frames_features.size() - _pre_pad_frames;
   } else {
     while(_samples.size() >= min_samples) {
       EpochTracker frame_et;
       frame_et.set_unvoiced_cost(kUnvoicedCost);
-      if (!frame_et.Init((int16_t *)&_samples[0], min_samples, _sample_rate,
+      auto samples_with_pad = _pad_samples;
+      samples_with_pad.insert(samples_with_pad.end(), _samples.begin(), _samples.begin() + min_samples);
+      if (!frame_et.Init((int16_t *)&samples_with_pad[0], samples_with_pad.size(), _sample_rate,
           min_f0, max_f0, do_high_pass, do_hilbert_transform)) {
           std::cout << "init wav epoch track failed" << std::endl;
           return false;
@@ -83,7 +100,7 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples, bool is_last) {
       float external_frame_interval = kExternalFrameInterval;
       float inter_pulse = kUnvoicedPulseInterval;
       std::vector<FrameFeature> step_frames_features;
-      for (int i = 0; i< frames_in_step; i ++){
+      for (int i = 0; i< frames_in_step + _pre_pad_frames; i ++){
         step_frames_features.push_back(FrameFeature());
       }
       if (!compute(frame_et,
@@ -96,13 +113,17 @@ int FeatureExtractor::feedSamples(std::vector<uint16_t> samples, bool is_last) {
       }
       _latest_frame_feature = step_frames_features.back();
       //std::cout << "1 samples size now:" << _samples.size() << " min_samples:" << min_samples << std::endl;
+      // update _pad_samples
+      memcpy(&_pad_samples[0], &_samples[step_samples - pad_samples_size], pad_samples_size * sizeof(uint16_t));
       _samples.erase(_samples.begin(), _samples.begin() + step_samples);
       //std::cout << "2 samples size now:" << _samples.size() << " min_samples:" << min_samples << std::endl;
-      _all_frame_features.insert(_all_frame_features.end(), step_frames_features.begin(), step_frames_features.end());
+      std::cout << "step_frames_features size:" << step_frames_features.size() << std::endl;
+      std::cout << "_all_frame_features size:" << _all_frame_features.size() << std::endl;
+      _all_frame_features.insert(_all_frame_features.end(), step_frames_features.begin() + _pre_pad_frames, step_frames_features.end());
       delete f0;
       delete pm;
       delete corr;
-      ret += step_frames_features.size();
+      ret += step_frames_features.size() - _pre_pad_frames;
     }
   }
   return ret;

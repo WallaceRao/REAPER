@@ -227,18 +227,29 @@ int main(int argc, char* argv[]) {
   FeatureExtractor extractor;
   int i = 0;
   
-  while (i <= n_samples - 100) {
+  while (i < n_samples) {
     std::vector<uint16_t> samples;
-    samples.resize(100);
-    memcpy(&samples[0], const_cast<int16_t *>(wav.data()->data()) + i, 100 * 2);
-    extractor.feedSamples(samples);
+    int feed_size = 100;
+    bool is_last = false;
+    if (i + 100 >= n_samples) {
+      feed_size = n_samples - i;
+      is_last = true;
+    }
+    samples.resize(feed_size);
+    memcpy(&samples[0], const_cast<int16_t *>(wav.data()->data()) + i, feed_size * 2);
+    //std::cout << "now i:" << i << ", total samples:" << n_samples << ", is_last:" << is_last << std::endl;
+    extractor.feedSamples(samples, is_last);
     i += 100;
-    //std::cout << "now i:" << i << ", total samples:" << n_samples << std::endl;
   }
   auto all_features = extractor.getAllFeature();
   std::cout << "all features:" << all_features.size() << std::endl;
+  int index = 0;
   for (const auto f: all_features) {
     std::cout << f.f0 << " ";
+    index ++;
+    if (index %5 ==0) {
+      std::cout << std::endl;
+    }
   }
   std::cout << std::endl;
   return 0;

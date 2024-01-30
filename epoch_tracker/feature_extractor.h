@@ -17,6 +17,7 @@ class FeatureExtractor {
  public:
   // step_dur must be integral multiple of frame_dur, and it should be no less that 0.5 second
   // to get accurate result.
+  // pre_pad_frames * frame_dur must be less than step_dur
   FeatureExtractor(int sample_rate = 24000, float step_dur = 0.5,
                   float frame_dur = 0.01, int pre_pad_frames = 0);
   ~FeatureExtractor() {};
@@ -49,6 +50,7 @@ class FeatureExtractor {
   std::vector<uint16_t> _samples;
   FrameFeature _latest_frame_feature;
   std::vector<FrameFeature> _all_frame_features;
+  std::vector<uint16_t> _pad_samples;
 };
 
 #endif  // _FFT_H_
